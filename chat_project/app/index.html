@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Микросервисный Чат</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background: #e5ddd5; 
+            display: flex; justify-content: center; align-items: center; 
+            height: 100vh; margin: 0; overflow: hidden; 
+        }
+        
+        .chat-container { 
+            background: #efeae2; width: 100%; max-width: 600px; height: 90vh; 
+            border-radius: 8px; display: flex; flex-direction: column; 
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); overflow: hidden; position: relative; 
+        }
+
+        .header { 
+            background: #008069; color: white; padding: 15px; font-weight: bold; font-size: 1.1rem;
+            flex-shrink: 0; display: flex; justify-content: space-between; align-items: center;
+        }
+
+        .auth-box { 
+            padding: 20px; display: flex; flex-direction: column; gap: 15px; 
+            align-items: center; justify-content: center; flex-grow: 1; overflow-y: auto;
+        }
+
+        .auth-box input, .auth-box button { 
+            padding: 12px; width: 100%; max-width: 280px; border-radius: 6px; 
+            border: 1px solid #ccc; box-sizing: border-box; font-size: 16px; 
+        }
+
+        .auth-box button { background-color: #008069; color: white; border: none; cursor: pointer; font-weight: bold; }
+        .auth-box button:hover { background-color: #016b58; }
+
+        .checkbox-group { display: flex; align-items: center; gap: 8px; font-size: 15px; color: #333; }
+        .checkbox-group input { width: 18px; height: 18px; margin: 0; }
+
+        /* Админ-панель поверх сообщений */
+        #adminPanel {
+            display: none; background: #ffffff; border-bottom: 2px solid #ccc; 
+            padding: 15px; flex-shrink: 0; max-height: 40%; overflow-y: auto; box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .admin-user-row {
+            display: flex; justify-content: space-between; align-items: center; 
+            padding: 8px; background: #f0f2f5; border-radius: 6px; margin-bottom: 5px; font-size: 14px;
+        }
+
+        #messages { 
+            flex-grow: 1; padding: 15px; overflow-y: auto; display: none; 
+            flex-direction: column; gap: 10px; 
+        }
+
+        .msg { 
+            max-width: 85%; padding: 8px 12px; border-radius: 8px; background: white; 
+            font-size: 15px; position: relative; box-shadow: 0 1px 1px rgba(0,0,0,0.1); word-wrap: break-word; 
+        }
+
+        .my-message { align-self: flex-end; background: #dcf8c6; border-top-right-radius: 0; }
+        .other-message { align-self: flex-start; border-top-left-radius: 0; }
+        .system { align-self: center; background: #fff3cd; color: #856404; font-size: 13px; text-align: center; border-radius: 12px; max-width: 90%; }
+        
+        .meta { font-size: 11px; color: #666; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .delete-btn { color: #d32f2f; cursor: pointer; font-weight: bold; margin-left: 10px; border: none; background: none; font-size: 14px; padding: 2px 5px; }
+
+        .input-area { 
+            display: none; padding: 10px; background: #f0f2f5; gap: 10px; align-items: center; flex-shrink: 0; 
+        }
+        .input-area input { flex-grow: 1; padding: 12px 15px; border: none; border-radius: 24px; outline: none; font-size: 16px; }
+        .input-area button { padding: 12px 20px; background-color: #008069; color: white; border: none; border-radius: 24px; cursor: pointer; font-weight: bold; font-size: 15px; white-space: nowrap; }
+
+        @media (max-width: 600px) {
+            body { background: #efeae2; height: 100dvh; }
+            .chat-container { height: 100%; border-radius: 0; box-shadow: none; max-width: 100%; }
+            .msg { max-width: 90%; }
+            .input-area { padding: 10px 8px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+            .input-area button { padding: 12px 15px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="chat-container">
+    <div class="header">
+        <span id="headerText">Авторизация</span>
+        <button id="adminBtn" onclick="toggleAdminPanel()" style="display: none; background: #fff; color: #008069; border: none; padding: 6px 12px; border-radius: 20px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">👥 Онлайн</button>
+    </div>
+    
+    <!-- Панель администратора (скрыта по умолчанию) -->
+    <div id="adminPanel">
+        <h4 style="margin: 0 0 10px 0; color: #333;">Активные пользователи</h4>
+        <div id="activeUsersList"></div>
+    </div>
+
+    <div class="auth-box" id="authBox">
+        <input type="text" id="username" placeholder="Логин" autocomplete="off">
+        <input type="password" id="password" placeholder="Пароль">
+        
+        <div class="checkbox-group">
+            <input type="checkbox" id="isAdmin"> 
+            <label for="isAdmin">Я Админ (при регистрации)</label>
+        </div>
+        
+        <button onclick="login()">Войти</button>
+        <button onclick="register()" style="background-color: #555;">Регистрация</button>
+    </div>
+
+    <div id="messages"></div>
+
+    <div class="input-area" id="inputArea">
+        <input type="text" id="messageText" placeholder="Сообщение..." onkeypress="if(event.key === 'Enter') sendMessage()" autocomplete="off">
+        <button onclick="sendMessage()">Отправить</button>
+    </div>
+</div>
+
+<script>
+    let ws = null;
+    let token = null;
+    let currentUser = {};
+
+    async function register() {
+        const u = document.getElementById("username").value.trim();
+        const p = document.getElementById("password").value.trim();
+        const a = document.getElementById("isAdmin").checked;
+
+        if (!u || !p) { alert("Заполните логин и пароль"); return; }
+
+        try {
+            const res = await fetch("/register", {
+                method: "POST", headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({username: u, password: p, is_admin: a})
+            });
+            const data = await res.json();
+            
+            if (res.ok) alert("Успешно! Теперь нажмите 'Войти'.");
+            else alert("Ошибка регистрации: " + (data.detail || "Неизвестная ошибка сервера"));
+        } catch (e) { alert("Сетевая ошибка сервера."); }
+    }
+
+    async function login() {
+        const u = document.getElementById("username").value.trim();
+        const p = document.getElementById("password").value.trim();
+        
+        if (!u || !p) { alert("Заполните логин и пароль"); return; }
+
+        const formData = new URLSearchParams();
+        formData.append("username", u);
+        formData.append("password", p);
+
+        try {
+            const res = await fetch("/token", { method: "POST", body: formData });
+            const data = await res.json();
+
+            if (res.ok) {
+                token = data.access_token;
+                currentUser = { id: data.user_id, username: data.username, isAdmin: data.is_admin };
+                startChat();
+            } else {
+                alert("Ошибка входа: " + (data.detail || "Неверные данные"));
+            }
+        } catch (e) { alert("Сетевая ошибка сервера."); }
+    }
+
+    function toggleAdminPanel() {
+        const p = document.getElementById("adminPanel");
+        p.style.display = (p.style.display === "none" || p.style.display === "") ? "block" : "none";
+    }
+
+    function renderActiveUsers(users) {
+        const list = document.getElementById("activeUsersList");
+        list.innerHTML = "";
+        
+        users.forEach(u => {
+            const row = document.createElement("div");
+            row.className = "admin-user-row";
+            
+            let actionHtml = "";
+            if (u.id === currentUser.id) {
+                actionHtml = `<span style="color: gray; font-size: 12px;">Это вы</span>`;
+            } else {
+                actionHtml = `<button onclick="banUser(${u.id})" style="background: #d32f2f; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px;">Бан</button>`;
+            }
+
+            row.innerHTML = `<span>👤 <b>${u.username}</b> (ID: ${u.id})</span> ${actionHtml}`;
+            list.appendChild(row);
+        });
+    }
+
+    async function banUser(userId) {
+        if(confirm("Вы уверены, что хотите заблокировать и отключить этого пользователя навсегда?")) {
+            const res = await fetch(`/admin/ban/${userId}`, {
+                method: "POST",
+                headers: {"Authorization": `Bearer ${token}`}
+            });
+            if(!res.ok) {
+                const data = await res.json();
+                alert("Ошибка: " + data.detail);
+            }
+        }
+    }
+
+    function startChat() {
+        document.getElementById("authBox").style.display = "none";
+        document.getElementById("messages").style.display = "flex";
+        document.getElementById("inputArea").style.display = "flex";
+        document.getElementById("headerText").innerText = `Чат (Вы: ${currentUser.username})`;
+
+        if(currentUser.isAdmin) {
+            document.getElementById("adminBtn").style.display = "block";
+        }
+
+        ws = new WebSocket(`ws://${location.host}/ws/chat/?token=${token}`);
+        
+        ws.onopen = () => appendSysMsg("Соединение установлено.");
+        
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            
+            // Если пришел список онлайна
+            if (data.type === "active_users") {
+                renderActiveUsers(data.users);
+                return;
+            }
+            // Если пользователя забанили
+            if (data.banned) {
+                alert(data.text);
+                window.location.reload(); // Перебрасываем на экран входа
+                return;
+            }
+            // Удаление сообщения
+            if (data.delete) {
+                const el = document.getElementById(`msg-${data.message_id}`);
+                if(el) el.remove();
+                return;
+            }
+            
+            if (data.system) {
+                appendSysMsg(data.text);
+            } else {
+                appendMsg(data);
+            }
+        };
+
+        ws.onclose = () => appendSysMsg("Отключено от сервера.");
+    }
+
+    function sendMessage() {
+        const input = document.getElementById("messageText");
+        const text = input.value.trim();
+        if (ws && text !== '') {
+            ws.send(text);
+            input.value = '';
+            input.focus(); 
+        }
+    }
+
+    async function deleteMsg(id) {
+        if(confirm("Удалить это сообщение для всех?")) {
+            await fetch(`/messages/${id}`, { method: "DELETE", headers: {"Authorization": `Bearer ${token}`} });
+        }
+    }
+
+    function appendMsg(data) {
+        const msgDiv = document.createElement("div");
+        msgDiv.className = "msg " + (data.user_id === currentUser.id ? "my-message" : "other-message");
+        msgDiv.id = `msg-${data.id}`;
+
+        let delBtn = "";
+        if(currentUser.isAdmin) delBtn = `<button class="delete-btn" onclick="deleteMsg(${data.id})">✖</button>`;
+
+        msgDiv.innerHTML = `<div class="meta"><b>${data.username}</b> <span>${data.timestamp} ${delBtn}</span></div><div>${data.text}</div>`;
+        document.getElementById("messages").appendChild(msgDiv);
+        scrollToBottom();
+    }
+
+    function appendSysMsg(text) {
+        const msgDiv = document.createElement("div");
+        msgDiv.className = "msg system";
+        msgDiv.textContent = text;
+        document.getElementById("messages").appendChild(msgDiv);
+        scrollToBottom();
+    }
+
+    function scrollToBottom() {
+        const m = document.getElementById("messages");
+        m.scrollTop = m.scrollHeight;
+    }
+</script>
+</body>
+</html>
